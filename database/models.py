@@ -1,6 +1,16 @@
-from sqlalchemy import Column, Integer, String, JSON, DateTime
+from sqlalchemy import Column, Integer, String, JSON, DateTime, Boolean
 from sqlalchemy.sql import func
 from .base import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    disabled = Column(Boolean, default=False)
 
 class Dataset(Base):
     __tablename__ = "datasets"
@@ -21,3 +31,6 @@ class MLModel(Base):
     model_path = Column(String)
     performance_metrics = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    
+    
