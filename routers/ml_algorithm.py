@@ -15,7 +15,8 @@ import os
 import json
 
 from database.base import get_db
-from database.models import Dataset, MLModel
+from models.ml_models import MLModelDB
+from models.datasets import DatasetDB
 
 router = APIRouter(prefix="/ml", tags=["machine_learning"])
 
@@ -34,7 +35,7 @@ def train_model(
     Train a machine learning model on a dataset
     """
     # Fetch dataset
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    dataset = db.query(DatasetDB).filter(DatasetDB.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
@@ -89,7 +90,7 @@ def train_model(
     joblib.dump(model, model_path)
     
     # Save to database
-    ml_model = MLModel(
+    ml_model = MLModelDB(
         dataset_id=dataset_id,
         algorithm_name=algorithm,
         model_path=model_path,

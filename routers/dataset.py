@@ -1,10 +1,9 @@
-# backend/routers/dataset.py
 import os
 import pandas as pd
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database.base import get_db
-from database.models import Dataset
+from models.datasets import DatasetDB 
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -13,7 +12,7 @@ os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 
 @router.post("/upload")
 async def upload_dataset(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
     """
@@ -38,10 +37,10 @@ async def upload_dataset(
         raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
     
     # Create database entry
-    db_dataset = Dataset(
+    db_dataset = DatasetDB(
         name=file.filename,
         file_path=file_path,
-        metadata={
+        dataset_metadata={
             "columns": list(df.columns),
             "shape": df.shape,
             "dtypes": str(df.dtypes)
@@ -63,13 +62,13 @@ def list_datasets(db: Session = Depends(get_db)):
     """
     Retrieve list of uploaded datasets
     """
-    datasets = db.query(Dataset).all()
+    datasets = db.query(DatasetDB).all()
     return [
         {
             "id": dataset.id,
             "name": dataset.name,
             "created_at": dataset.created_at,
-            "metadata": dataset.metadata
+            "metadata": dataset.dataset_metadata
         } for dataset in datasets
     ]
 
@@ -78,7 +77,7 @@ def get_dataset_details(dataset_id: int, db: Session = Depends(get_db)):
     """
     Get details of a specific dataset
     """
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    dataset = db.query(DatasetDB).filter(DatasetDB.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
@@ -93,7 +92,7 @@ def get_dataset_details(dataset_id: int, db: Session = Depends(get_db)):
             "id": dataset.id,
             "name": dataset.name,
             "file_path": dataset.file_path,
-            "metadata": dataset.metadata,
+            "metadata": dataset.dataset_metadata,
             "sample_data": df.head(10).to_dict(orient='records')
         }
     except Exception as e:

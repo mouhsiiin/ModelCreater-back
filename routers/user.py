@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from schemas.user import UserCreate, User
+from models.users import UserCreate, UserDB, User
 from database.base import get_db
-from database import models
 from security.auth import get_current_user
 from passlib.context import CryptContext
 
@@ -29,12 +28,12 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     - Saves the new user to the database
     """
     # Check if user already exists
-    existing_user = db.query(models.User).filter(models.User.username == user.username).first()
+    existing_user = db.query(UserDB).filter(UserDB.username == user.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already registered")
     
     # Create new user model
-    new_user = models.User(
+    new_user = UserDB(
         username=user.username,
         email=user.email,
         hashed_password=hash_password(user.password)

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.base import get_db
-from database.models import Dataset
+from models.datasets import DatasetDB
 
 router = APIRouter(prefix="/visualize", tags=["visualization"])
 
@@ -23,7 +23,7 @@ def create_scatter_plot(
     Generate a scatter plot for two numerical columns
     """
     # Fetch dataset
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    dataset = db.query(DatasetDB).filter(DatasetDB.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
@@ -70,7 +70,7 @@ def create_histogram(
     Generate a histogram for a numerical column
     """
     # Fetch dataset
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    dataset = db.query(DatasetDB).filter(DatasetDB.id == dataset_id).first()
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
