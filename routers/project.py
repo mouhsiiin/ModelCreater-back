@@ -35,6 +35,18 @@ def get_projects(
     projects = db.query(ProjectDB).offset(skip).limit(limit).all()
     return projects
 
+
+# get recent projects
+@router.get("/recent", response_model=List[Project])
+def get_recent_projects(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get the most recent projects"""
+    projects = db.query(ProjectDB).order_by(ProjectDB.created_at.desc()).limit(limit).all()
+    return projects
+
 @router.get("/{project_id}", response_model=Project)
 def get_project(
     project_id: int,

@@ -22,6 +22,7 @@ class ProjectDB(Base):
     
 
 class Project(BaseModel):
+    id : int
     name: str
     owner_id: int
     description: Optional[str] = None

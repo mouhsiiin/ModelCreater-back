@@ -54,17 +54,13 @@ def create_access_token(data: dict):
 
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    print("token: ",token)
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        print("SECRET_KEY: ",SECRET_KEY)
-        print("ALGORITHM: ",ALGORITHM)
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        print("payload: ",payload)
         username: str = payload.get("username")
         if username is None:
             raise credentials_exception
