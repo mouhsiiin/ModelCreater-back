@@ -27,8 +27,7 @@ app.add_middleware(
 # Password hashing setup
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# JWT token settings
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
 
 # Routers
 app.include_router(dataset.router)
@@ -55,9 +54,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     if not user:
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"username": user.username, "email": user.email, "is_active": user.disabled, "id": user.id},
-        expires_delta=access_token_expires,
     )
     return {"access_token": access_token, "token_type": "bearer"}

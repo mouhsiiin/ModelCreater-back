@@ -46,6 +46,19 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     
     return new_user
 
+
+# get all users
+@router.get("/all", response_model=list[User])
+def get_all_users(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Get all users in the database
+    
+    - Requires a valid JWT token
+    - Returns a list of users
+    """
+    return db.query(UserDB).all()
+
+
 @router.get("/profile", response_model=User)
 def get_user_profile(current_user: User = Depends(get_current_user)):
     """
