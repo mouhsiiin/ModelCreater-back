@@ -12,6 +12,9 @@ class PreprocessingConfigurationDB(Base):
     options = Column(JSON, nullable=False)
     preview_stats = Column(JSON, nullable=False)
     
+    # Relationships
+    
+    
 
 
 class PreprocessingConfiguration(BaseModel):
