@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, JSON
 from database.base import Base
 from pydantic import BaseModel
+from sqlalchemy.orm import relationship
 
 
 
@@ -13,11 +14,24 @@ class PreprocessingConfigurationDB(Base):
     preview_stats = Column(JSON, nullable=False)
     
     # Relationships
+    preprocessed_datasets = relationship("PreprocessedDataset", back_populates="config")
+
     
     
 
 
 class PreprocessingConfiguration(BaseModel):
+    config_id: str
+    options: dict
+    preview_stats: dict
+    
+    class Config:
+        orm_mode = True
+        
+        
+        
+        
+class PreprocessingConfigurationCreate(BaseModel):
     config_id: str
     options: dict
     preview_stats: dict
