@@ -14,3 +14,5 @@ python-jose==3.3.0
 passlib[bcrypt]==1.7.4
 python-dotenv
 alembic==1.14.0
+seaboarn==0.13.2
+

@@ -36,6 +36,16 @@ def get_projects(
     return projects
 
 
+@router.get("/my", response_model=List[Project])
+def get_my_projects(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all projects owned by the current user"""
+    projects = db.query(ProjectDB).filter(ProjectDB.owner_id == current_user.id).all()
+    return projects
+
+
 # get recent projects
 @router.get("/recent", response_model=List[Project])
 def get_recent_projects(
@@ -44,7 +54,7 @@ def get_recent_projects(
     current_user: User = Depends(get_current_user)
 ):
     """Get the most recent projects"""
-    projects = db.query(ProjectDB).order_by(ProjectDB.created_at.desc()).limit(limit).all()
+    projects = db.query(ProjectDB).filter(ProjectDB.owner_id == current_user.id).order_by(ProjectDB.created_at.desc()).limit(limit).all()
     return projects
 
 @router.get("/{project_id}", response_model=Project)

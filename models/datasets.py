@@ -4,7 +4,8 @@ from database.base import Base
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime 
-
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import relationship
 
 
 
@@ -12,13 +13,18 @@ class DatasetDB(Base):
     __tablename__ = "datasets"
     
     id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer , ForeignKey("projects.id"))
     name = Column(String, index=True)
     file_path = Column(String)
     dataset_metadata = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
+    # relationships
+    project = relationship("ProjectDB", back_populates="datasets")
+    
 class Dataset(BaseModel):
     name: str
+    project_id: int
     file_path: str
     dataset_metadata: dict
     created_at: datetime
@@ -27,12 +33,14 @@ class Dataset(BaseModel):
     
 class DatasetCreate(BaseModel):
     name: str
+    project_id: int
     file_path: str
     dataset_metadata: dict
     
     def create_db_instance(self):
         return DatasetDB(
             name=self.name,
+            project_id=self.project_id,
             file_path=self.file_path,
             dataset_metadata=self.dataset_metadata
         )

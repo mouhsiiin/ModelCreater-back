@@ -1,14 +1,18 @@
 import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 import io
 import base64
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from database.base import get_db
 from models.datasets import DatasetDB
+
 
 router = APIRouter(prefix="/visualize", tags=["visualization"])
 
@@ -30,7 +34,7 @@ def create_plot_response(plt) -> dict:
     """Helper function to convert plot to base64"""
     buffer = io.BytesIO()
     plt.savefig(buffer, format='png', bbox_inches='tight', dpi=300)
-    buffer.seek(0)
+    buffer.seek(0) 
     plot_data = base64.b64encode(buffer.getvalue()).decode()
     plt.close()
     return {"plot": plot_data, "message": "Plot generated successfully"}
@@ -107,7 +111,7 @@ def create_boxplot(
 def create_lineplot(
     dataset_id: int,
     x_column: str,
-    y_columns: List[str],
+    y_columns: List[str] = Query(...),
     db: Session = Depends(get_db)
 ):
     """Generate a line plot for multiple y columns against an x column"""
@@ -129,6 +133,10 @@ def create_lineplot(
     plt.xticks(rotation=45)
     return create_plot_response(plt)
 
+
+
+
+
 @router.get("/barplot")
 def create_barplot(
     dataset_id: int,
@@ -137,24 +145,40 @@ def create_barplot(
     aggregation: str = "mean",
     db: Session = Depends(get_db)
 ):
-    """Generate a bar plot with aggregated values"""
+    """Generate a bar plot with aggregated values."""
     df = load_dataset(dataset_id, db)
     
+    # Validate columns
     if x_column not in df.columns or y_column not in df.columns:
         raise HTTPException(status_code=400, detail="Invalid column names")
     
-    valid_aggregations = ["mean", "sum", "count", "median"]
-    if aggregation not in valid_aggregations:
+    # Map valid aggregations to their corresponding functions
+    aggregation_functions = {
+        "mean": np.mean,
+        "sum": np.sum,
+        "count": len,
+        "median": np.median,
+    }
+    
+    # Validate aggregation method
+    if aggregation not in aggregation_functions:
         raise HTTPException(
             status_code=400, 
-            detail=f"Invalid aggregation. Must be one of: {', '.join(valid_aggregations)}"
+            detail=f"Invalid aggregation. Must be one of: {', '.join(aggregation_functions.keys())}"
         )
     
+    estimator_function = aggregation_functions[aggregation]
+
+    # Generate the plot
     plt.figure(figsize=(12, 6))
-    sns.barplot(data=df, x=x_column, y=y_column, estimator=getattr(pd, aggregation))
-    plt.title(f"Bar Plot: {aggregation} of {y_column} by {x_column}")
+    sns.barplot(data=df, x=x_column, y=y_column, estimator=estimator_function)
+    plt.title(f"Bar Plot: {aggregation.capitalize()} of {y_column} by {x_column}")
     plt.xticks(rotation=45)
+    
+    # Return the plot as a response
     return create_plot_response(plt)
+
+
 
 @router.get("/heatmap")
 def create_heatmap(
