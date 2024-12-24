@@ -9,6 +9,7 @@ pydantic==2.10.3
 requests==2.32.0
 psycopg2-binary==2.9.1
 scikit-learn==1.6.0
+seaborn==0.11.2
 pydantic-settings==2.6.1
 python-jose==3.3.0
 passlib[bcrypt]==1.7.4
