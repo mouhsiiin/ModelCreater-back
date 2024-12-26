@@ -7,7 +7,7 @@ from models.datasets import DatasetDB
 from models.projects import ProjectDB
 from services.data_preprocessing import PreprocessingService
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 import os
 
@@ -30,19 +30,24 @@ async def process_data(
     """
     
     # Get dataset ID from project
-    dataset_id = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).first().id
+    dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).first()
+    dataset_id = dataset.id
+    
     
     if not dataset_id:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
-    print(config.model_dump())
+    print("store config")
     
     try:
         preprocessing_service = PreprocessingService(db)
         config_id = preprocessing_service.store_configuration(config.model_dump())
         
+        print("config_id: ", config_id)
+        
+        
         # Read dataset file
-        file_path = os.path.join(UPLOAD_DIRECTORY, f"dataset_{dataset_id}.csv")
+        file_path = dataset.file_path
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="Dataset file not found")
         
@@ -54,25 +59,46 @@ async def process_data(
             status="pending",
             location="",
             metadata={
-                "started_at": datetime.utcnow().isoformat(),
+                "started_at": datetime.now(timezone.utc).isoformat(),
                 "original_rows": len(data)
             }
         )
         db.add(preprocessed_dataset)
         db.flush()
+        
+        print("config is stored")
 
         try:
             print("Processing data...")
-            print("Config: ", config)
             result_df = preprocessing_service.execute_preprocessing(data.to_dict('records'), config.model_dump()["options"])
             
-            storage_location = f"preprocessed/dataset_{dataset_id}/version_{preprocessed_dataset.id}"
-            preprocessing_service.save_preprocessed_data(result_df, storage_location)
+            if len(result_df) == 0:
+                raise ValueError("No data left after preprocessing")
+            
+            # Ensure the base directory exists
+            base_dir = os.path.join(UPLOAD_DIRECTORY, f"project_{project_id}")
+            if not os.path.exists(base_dir):
+                os.makedirs(base_dir)
+
+
+
+            # Construct the storage location
+            if preprocessed_dataset.id is None:
+                raise ValueError("preprocessed_dataset.id is None; cannot construct storage path.")
+
+            storage_location = os.path.join(base_dir, f"version_{preprocessed_dataset.id}.csv")
+
+            # Save the DataFrame
+            try:
+                result_df.to_csv(storage_location, index=False)
+                print(f"Data successfully saved to {storage_location}")
+            except Exception as e:
+                print(f"Failed to save data: {e}")
 
             preprocessed_dataset.status = "completed"
             preprocessed_dataset.location = storage_location
             preprocessed_dataset.metadata.update({
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
                 "processed_rows": len(result_df),
                 "columns": list(result_df.columns)
             })

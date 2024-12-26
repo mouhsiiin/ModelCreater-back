@@ -16,15 +16,18 @@ class PreprocessingService:
 
     def store_configuration(self, config: Dict) -> str:
         """Store preprocessing configuration and return config_id"""
-        config_id = str(uuid.uuid4())
         db_config = PreprocessingConfigurationDB(
-            config_id=config_id,
-            options=config.options.model_dump(),
-            preview_stats=config.previewStats.model_dump()
+            options=config["options"],
+            preview_stats=config["preview_stats"]
         )
         self.db_session.add(db_config)
         self.db_session.commit()
-        return config_id
+        return db_config.id
+    
+    def save_preprocessed_data(self, data: pd.DataFrame, location: str) -> str:
+        """Save preprocessed data to a file"""
+        data.to_csv(location, index=False)
+        return location
 
     def get_configuration(self, config_id: str) -> Dict:
         """Retrieve preprocessing configuration"""
@@ -34,7 +37,7 @@ class PreprocessingService:
         return config
 
     def handle_missing_values(self, df: pd.DataFrame, method: str, constant_value: str = None) -> pd.DataFrame:
-        if method == "drop":
+        if method == "remove":
             return df.dropna()
         elif method == "mean":
             return df.fillna(df.mean())
@@ -66,6 +69,7 @@ class PreprocessingService:
             
         df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
         return df
+
 
     def reduce_dimensionality(self, df: pd.DataFrame, method: str, n_components: int) -> pd.DataFrame:
         if method == "pca":

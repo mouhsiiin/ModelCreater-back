@@ -9,7 +9,6 @@ class PreprocessingConfigurationDB(Base):
     __tablename__ = "preprocessing_configurations"
     
     id = Column(Integer, primary_key=True)
-    config_id = Column(String, unique=True, nullable=False)
     options = Column(JSON, nullable=False)
     preview_stats = Column(JSON, nullable=False)
     
