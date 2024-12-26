@@ -14,7 +14,7 @@ class PreprocessingConfigurationDB(Base):
     preview_stats = Column(JSON, nullable=False)
     
     # Relationships
-    preprocessed_datasets = relationship("PreprocessedDataset", back_populates="config")
+    preprocessed_datasets = relationship("PreprocessedDatasetDB", back_populates="config")
 
     
     
@@ -32,7 +32,6 @@ class PreprocessingConfiguration(BaseModel):
         
         
 class PreprocessingConfigurationCreate(BaseModel):
-    config_id: str
     options: dict
     preview_stats: dict
     

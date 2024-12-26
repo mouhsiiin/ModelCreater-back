@@ -21,7 +21,7 @@ class DatasetDB(Base):
     
     # relationships
     project = relationship("ProjectDB", back_populates="datasets")
-    preprocessed_datasets = relationship("PreprocessedDataset", back_populates="dataset")
+    preprocessed_datasets = relationship("PreprocessedDatasetDB", back_populates="dataset")
     
 class Dataset(BaseModel):
     name: str

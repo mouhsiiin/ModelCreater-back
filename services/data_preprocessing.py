@@ -19,8 +19,8 @@ class PreprocessingService:
         config_id = str(uuid.uuid4())
         db_config = PreprocessingConfigurationDB(
             config_id=config_id,
-            options=config.options.dict(),
-            preview_stats=config.previewStats.dict()
+            options=config.options.model_dump(),
+            preview_stats=config.previewStats.model_dump()
         )
         self.db_session.add(db_config)
         self.db_session.commit()

@@ -1,91 +1,74 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database.base import get_db
-from models.preprocessing import PreprocessingConfiguration, PreprocessingConfigurationCreate
-from models.preprocessed_datasets import PreprocessedDataset
+from models.preprocessing import PreprocessingConfigurationCreate
+from models.preprocessed_datasets import PreprocessedDatasetDB
+from models.datasets import DatasetDB
+from models.projects import ProjectDB
 from services.data_preprocessing import PreprocessingService
-from typing import List, Dict, Any
-import os
+from typing import Dict, Any
 from datetime import datetime
+import pandas as pd
+import os
 
-
+UPLOAD_DIRECTORY = "uploads"
 router = APIRouter(prefix="/preprocessing", tags=["preprocessing"])
 
-@router.post("/configure")
-async def configure_preprocessing(
+@router.post("/process/{project_id}")
+async def process_data(
     config: PreprocessingConfigurationCreate,
+    project_id: int,
     db: Session = Depends(get_db)
 ):
     """
-    Endpoint to store preprocessing configuration.
+    Endpoint to store preprocessing configuration and execute preprocessing from uploaded file.
     
-    Args:
-        config: PreprocessingConfigurationCreate - Configuration details provided by the user.
-        db: Database session dependency.
-    
-    Returns:
-        JSON response with status and configuration ID.
+    args:
+        config (PreprocessingConfigurationCreate): Configuration for preprocessing
+        project_id (int): Project ID to get dataset from
+        db (Session): Database session
     """
+    
+    # Get dataset ID from project
+    dataset_id = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).first().id
+    
+    if not dataset_id:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    
+    print(config.model_dump())
+    
     try:
         preprocessing_service = PreprocessingService(db)
-        config_id = preprocessing_service.store_configuration(config.dict())
-        return {
-            "status": "success",
-            "message": "Preprocessing configuration stored successfully.",
-            "config_id": config_id
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to store configuration: {str(e)}")
-
-@router.post("/execute")
-async def execute_preprocessing(
-    data: List[Dict[str, Any]],
-    config_id: str,
-    dataset_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Endpoint to execute preprocessing on provided data using a specific configuration.
-    
-    Args:
-        data: List[Dict[str, Any]] - The raw data to preprocess.
-        config_id: str - ID of the preprocessing configuration to use.
-        dataset_id: int - ID of the dataset being preprocessed.
-        db: Database session dependency.
-    
-    Returns:
-        JSON response with status, message, and preprocessed dataset information.
-    """
-    try:
-        preprocessing_service = PreprocessingService(db)
-        config = preprocessing_service.get_configuration(config_id)
-
-        if not config:
-            raise HTTPException(status_code=404, detail="Configuration not found")
-
-        # Create a new preprocessed dataset entry
-        preprocessed_dataset = PreprocessedDataset(
+        config_id = preprocessing_service.store_configuration(config.model_dump())
+        
+        # Read dataset file
+        file_path = os.path.join(UPLOAD_DIRECTORY, f"dataset_{dataset_id}.csv")
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Dataset file not found")
+        
+        data = pd.read_csv(file_path)
+        
+        preprocessed_dataset = PreprocessedDatasetDB(
             dataset_id=dataset_id,
             config_id=config_id,
             status="pending",
-            location="",  # Will be updated after processing
+            location="",
             metadata={
                 "started_at": datetime.utcnow().isoformat(),
                 "original_rows": len(data)
             }
         )
         db.add(preprocessed_dataset)
-        db.flush()  # Get the ID without committing
+        db.flush()
 
         try:
-            # Execute preprocessing
-            result_df = preprocessing_service.execute_preprocessing(data, config.options)
+            print("Processing data...")
+            print("Config: ", config)
+            result_df = preprocessing_service.execute_preprocessing(data.to_dict('records'), config.model_dump()["options"])
             
-            # Save the preprocessed data to a storage location
             storage_location = f"preprocessed/dataset_{dataset_id}/version_{preprocessed_dataset.id}"
             preprocessing_service.save_preprocessed_data(result_df, storage_location)
 
-            # Update the preprocessed dataset entry
             preprocessed_dataset.status = "completed"
             preprocessed_dataset.location = storage_location
             preprocessed_dataset.metadata.update({
@@ -98,14 +81,13 @@ async def execute_preprocessing(
 
             return {
                 "status": "success",
-                "message": "Preprocessing completed successfully.",
+                "config_id": config_id,
                 "preprocessed_dataset_id": preprocessed_dataset.id,
                 "location": storage_location,
                 "metadata": preprocessed_dataset.metadata
             }
 
         except Exception as process_error:
-            # Update the preprocessed dataset entry with error status
             preprocessed_dataset.status = "failed"
             preprocessed_dataset.metadata.update({
                 "error": str(process_error),
@@ -114,7 +96,5 @@ async def execute_preprocessing(
             db.commit()
             raise process_error
 
-    except HTTPException as http_exc:
-        raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to execute preprocessing: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to process data: {str(e)}")
