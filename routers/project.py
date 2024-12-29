@@ -44,7 +44,11 @@ def get_recent_projects(
     current_user: User = Depends(get_current_user)
 ):
     """Get the most recent projects"""
-    projects = db.query(ProjectDB).order_by(ProjectDB.created_at.desc()).limit(limit).all()
+    if current_user:
+        projects = db.query(ProjectDB).filter(ProjectDB.owner_id == current_user.id).order_by(ProjectDB.created_at.desc()).limit(limit).all()
+    else:
+        # for guest users, return public projects
+        projects = db.query(ProjectDB).filter(ProjectDB.is_public == True).order_by(ProjectDB.created_at.desc()).limit(limit).all()
     return projects
 
 @router.get("/{project_id}", response_model=Project)
