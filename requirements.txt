@@ -16,3 +16,4 @@ passlib[bcrypt]==1.7.4
 python-dotenv
 alembic==1.14.0
 reportlab==4.2.5
+seaborn==0.13

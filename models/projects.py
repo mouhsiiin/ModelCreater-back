@@ -19,6 +19,7 @@ class ProjectDB(Base):
     
     # relationships
     owner = relationship("UserDB", back_populates="projects")
+    datasets = relationship("DatasetDB", back_populates="project")
     
 
 class Project(BaseModel):
