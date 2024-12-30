@@ -1,12 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from routers import auto_ml, dataset, ml_algorithm, user, visualization, project
 from routers import dataset, ml_algorithm, user, visualization, project, preprocessing
 from database.base import engine, get_db, Base
-from datetime import timedelta
 from security.auth import create_access_token, authenticate_user, check_admin
-from models.users import Token
 from passlib.context import CryptContext
 
 # Initialize FastAPI app
@@ -36,6 +35,7 @@ app.include_router(ml_algorithm.router)
 app.include_router(visualization.router)
 app.include_router(user.router)
 app.include_router(project.router)
+app.include_router(auto_ml.router)
 app.include_router(preprocessing.router)
 
 
