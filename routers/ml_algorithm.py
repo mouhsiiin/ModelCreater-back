@@ -1,108 +1,131 @@
-
-# backend/routers/ml_algorithms.py
+# routers/ml_algorithms.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.metrics import (
-    mean_squared_error, r2_score, 
-    accuracy_score, precision_score, recall_score, f1_score
-)
-import joblib
-import os
-import json
+from typing import Optional, Dict, Any
 
 from database.base import get_db
 from models.ml_models import MLModelDB
+from models.preprocessed_datasets import PreprocessedDatasetDB
 from models.datasets import DatasetDB
+from services.ml_service import MLTrainingService, MLPredictionService
 
 router = APIRouter(prefix="/ml", tags=["machine_learning"])
-
-MODELS_DIRECTORY = "trained_models/"
-os.makedirs(MODELS_DIRECTORY, exist_ok=True)
+ml_service = MLTrainingService()
 
 @router.post("/train")
 def train_model(
-    dataset_id: int, 
-    algorithm: str = "linear_regression", 
-    target_column: str = None,
+    project_id: int,
+    algorithm: str,
+    target_column: str,
+    hyperparameters: Optional[Dict[str, Any]] = None,
     test_size: float = 0.2,
+    scale_features: bool = True,
     db: Session = Depends(get_db)
 ):
-    """
-    Train a machine learning model on a dataset
-    """
+    """Train a machine learning model on a dataset"""
     # Fetch dataset
-    dataset = db.query(DatasetDB).filter(DatasetDB.id == dataset_id).first()
+    raw_dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).first()
+    
+    # Fetch the latest preprocessed dataset
+    dataset = db.query(PreprocessedDatasetDB).filter(PreprocessedDatasetDB.dataset_id == raw_dataset.id).order_by(PreprocessedDatasetDB.id.desc()).first()
+    
+    
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
     # Read dataset
     try:
-        if dataset.file_path.endswith('.csv'):
-            df = pd.read_csv(dataset.file_path)
+        if dataset.location.endswith('.csv'):
+            df = pd.read_csv(dataset.location)
         else:
-            df = pd.read_json(dataset.file_path)
+            df = pd.read_json(dataset.location)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading dataset: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error reading dataset: {str(e)}"
+        )
     
     # Validate target column
     if not target_column or target_column not in df.columns:
-        raise HTTPException(status_code=400, detail="Invalid or missing target column")
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid or missing target column"
+        )
     
-    # Prepare data
-    X = df.drop(columns=[target_column])
-    y = df[target_column]
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
-    
-    # Train model based on algorithm
-    if algorithm == "linear_regression":
-        model = LinearRegression()
-        model.fit(X_train, y_train)
+    try:
+        # Train model
+        result = ml_service.train(
+            df=df,
+            algorithm=algorithm,
+            target_column=target_column,
+            dataset_id=dataset.id,
+            hyperparameters=hyperparameters,
+            test_size=test_size,
+            scale_features=scale_features
+        )
         
-        # Evaluate
-        y_pred = model.predict(X_test)
-        metrics = {
-            "mse": mean_squared_error(y_test, y_pred),
-            "r2_score": r2_score(y_test, y_pred)
-        }
-    elif algorithm == "logistic_regression":
-        model = LogisticRegression()
-        model.fit(X_train, y_train)
+        print(result)
         
-        # Evaluate
-        y_pred = model.predict(X_test)
-        metrics = {
-            "accuracy": accuracy_score(y_test, y_pred),
-            "precision": precision_score(y_test, y_pred, average='weighted'),
-            "recall": recall_score(y_test, y_pred, average='weighted'),
-            "f1_score": f1_score(y_test, y_pred, average='weighted')
+        # Save to database
+        ml_model = MLModelDB(
+            dataset_id=dataset.id,
+            algorithm_name=algorithm,
+            model_path=result["model_path"],
+            performance_metrics=result["metrics"],
+            feature_names=result["feature_names"]
+        )
+        db.add(ml_model)
+        db.commit()
+        db.refresh(ml_model)
+        
+        return {
+            "message": "Model trained successfully",
+            "model_id": ml_model.id,
+            "algorithm": algorithm,
+            "metrics": result["metrics"]
         }
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported algorithm")
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error training model: {str(e)}"
+        )
+
+
+@router.post("/predict/{model_id}")
+def predict(
+    model_id: int,
+    input_data: Dict[str, Any],
+    db: Session = Depends(get_db)
+):
+    """Make predictions using a trained model"""
+    # Initialize prediction service
+    prediction_service = MLPredictionService()
     
-    # Save model
-    model_filename = f"{algorithm}_{dataset_id}_{target_column}.pkl"
-    model_path = os.path.join(MODELS_DIRECTORY, model_filename)
-    joblib.dump(model, model_path)
+    # Fetch model from database
+    ml_model = db.query(MLModelDB).filter(MLModelDB.id == model_id).first()
+    if not ml_model:
+        raise HTTPException(status_code=404, detail="Model not found")
     
-    # Save to database
-    ml_model = MLModelDB(
-        dataset_id=dataset_id,
-        algorithm_name=algorithm,
-        model_path=model_path,
-        performance_metrics=metrics
-    )
-    db.add(ml_model)
-    db.commit()
-    db.refresh(ml_model)
-    
-    return {
-        "message": "Model trained successfully",
-        "model_id": ml_model.id,
-        "algorithm": algorithm,
-        "metrics": metrics
-    }
+    try:
+        # Convert input data to DataFrame
+        input_df = pd.DataFrame([input_data])
+        
+        # Make prediction
+        predictions = prediction_service.predict(ml_model.model_path, input_df)
+        
+        return {
+            "predictions": predictions.tolist(),
+            "model_id": model_id
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error making prediction: {str(e)}"
+        )

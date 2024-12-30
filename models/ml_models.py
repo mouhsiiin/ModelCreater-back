@@ -14,6 +14,7 @@ class MLModelDB(Base):
     algorithm_name = Column(String)
     model_path = Column(String)
     performance_metrics = Column(JSON)
+    feature_names = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     
@@ -23,6 +24,7 @@ class MLModel(BaseModel):
     algorithm_name: str
     model_path: str
     performance_metrics: dict
+    feature_names: list
     created_at: datetime
     
     
@@ -32,13 +34,15 @@ class MLModelCreate(BaseModel):
     algorithm_name: str
     model_path: str
     performance_metrics: dict
+    feature_names: list
     
     def create_db_instance(self):
         return MLModelDB(
             dataset_id=self.dataset_id,
             algorithm_name=self.algorithm_name,
             model_path=self.model_path,
-            performance_metrics=self.performance_metrics
+            performance_metrics=self.performance_metrics,
+            feature_names=self.feature_names
         )
         
         
@@ -47,6 +51,7 @@ class MLModelUpdate(BaseModel):
     algorithm_name: Optional[str] = None
     model_path: Optional[str] = None
     performance_metrics: Optional[dict] = None
+    feature_names: Optional[list] = None
     created_at: Optional[datetime] = None
     
     
@@ -57,6 +62,8 @@ class MLModelUpdate(BaseModel):
             db_ml_model.algorithm_name = self.algorithm_name
         if self.model_path:
             db_ml_model.model_path = self.model_path
+        if self.feature_names:
+            db_ml_model.feature_names = self.feature_names
         if self.performance_metrics:
             db_ml_model.performance_metrics = self.performance_metrics
         return db_ml_model
