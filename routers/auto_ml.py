@@ -20,33 +20,7 @@ from fastapi import HTTPException
 
 router = APIRouter(prefix="/auto", tags=["auto_Crafter"])
 
-# Helper function to generate a simple PDF report
-def generate_pdf_report(dataset_name: str) -> BytesIO:
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer)
-    
-    # Add content to the PDF
-    c.drawString(100, 800, f"Project : test_project ")
-    c.drawString(100, 780, f"Dataset: {dataset_name}")
-    c.drawString(100, 760, "This is a sample PDF report.")
-    
-    c.showPage()
-    c.save()
-    buffer.seek(0)
-    
-    return buffer
-
-@router.post("/generate-pdf")
-async def generate_pdf(dataset_name: str):
-    try:
-        # Generate the PDF report and return it as a stream
-        pdf_buffer = generate_pdf_report(dataset_name)
-        return StreamingResponse(pdf_buffer, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={dataset_name}-report.pdf"})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/train")
+@router.post("/craft")
 async def auto_ml_pipeline(
     file: UploadFile = File(...)
 ):
@@ -94,7 +68,7 @@ async def auto_ml_pipeline(
     y = data.iloc[:, -1]   # Last column as the target variable
 
     print(f"Shape of X before split: {X.shape}")
-    print(f"Shape of y before split: {y.shape}")
+    print(f"Shape of y before split: {y.shape}")    
 
     # Determine if the task is regression or classification
     if y.nunique() < 20:  # Adjust threshold for discrete values
