@@ -1,5 +1,5 @@
 # services/ml_training.py
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -16,6 +16,7 @@ from sklearn.metrics import (
 import joblib
 import os
 from pathlib import Path
+
 
 class MLTrainingService:
     def __init__(self, models_directory: str = "trained_models/"):
@@ -38,43 +39,127 @@ class MLTrainingService:
             "random_forest_classifier": RandomForestClassifier,
             "svc": SVC
         }
+        
+        # Define columns that should be excluded from preprocessing
+        self.pii_columns = {
+            'id', 'name', 'email', 'phone', 'address', 'ip_address',
+            'social_security', 'passport_number'
+        }
+        self.location_columns = {'city', 'state', 'country', 'zip_code', 'postal_code'}
+
+    def _preprocess_categorical_features(
+        self,
+        df: pd.DataFrame,
+        exclude_columns: List[str],
+        high_cardinality_threshold: int = 50
+    ) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Preprocess categorical features with intelligent handling of different column types.
+        
+        Args:
+            df: Input DataFrame
+            exclude_columns: List of columns to exclude from processing
+            high_cardinality_threshold: Maximum unique values for categorical columns
+            
+        Returns:
+            Tuple[pd.DataFrame, List[str]]: Processed DataFrame and list of dropped columns
+        """
+        X = df.copy()
+        dropped_columns = []
+        
+        # Validate input columns
+        existing_columns = set(X.columns)
+        valid_exclude_columns = [col for col in exclude_columns if col in existing_columns]
+        valid_pii_columns = self.pii_columns & existing_columns
+        
+        # Remove specified columns and PII
+        columns_to_drop = list(set(valid_exclude_columns) | valid_pii_columns)
+        print(f"Found columns in DataFrame: {existing_columns}")
+        print(f"Valid columns to exclude: {valid_exclude_columns}")
+        print(f"Valid PII columns found: {valid_pii_columns}")
+        print(f"Final columns to drop: {columns_to_drop}")
+        
+        if columns_to_drop:
+            X = X.drop(columns=columns_to_drop)
+            dropped_columns.extend(columns_to_drop)
+        
+        # Handle categorical columns
+        categorical_columns = X.select_dtypes(include=['object', 'category']).columns
+        print(f"Categorical columns found: {list(categorical_columns)}")
+        
+        for col in categorical_columns:
+            try:
+                unique_count = X[col].nunique()
+                print(f"Processing column '{col}' with {unique_count} unique values")
+                
+                if col in self.location_columns:
+                    if unique_count > high_cardinality_threshold:
+                        # Frequency encoding for high-cardinality location columns
+                        freq_encoding = X[col].value_counts(normalize=True)
+                        X[f'{col}_freq'] = X[col].map(freq_encoding)
+                        X = X.drop(columns=[col])
+                        dropped_columns.append(col)
+                        print(f"Applied frequency encoding to location column '{col}'")
+                elif unique_count > high_cardinality_threshold:
+                    # Drop high-cardinality columns
+                    X = X.drop(columns=[col])
+                    dropped_columns.append(col)
+                    print(f"Dropped high-cardinality column '{col}'")
+                else:
+                    # One-hot encode low-cardinality columns
+                    dummies = pd.get_dummies(X[col], prefix=col, drop_first=True)
+                    X = pd.concat([X, dummies], axis=1)
+                    X = X.drop(columns=[col])
+                    print(f"One-hot encoded column '{col}'")
+            except Exception as e:
+                print(f"Error processing column '{col}': {str(e)}")
+                continue
+        
+        # Verify numerical columns
+        numerical_columns = X.select_dtypes(include=['int64', 'float64']).columns
+        print(f"Remaining numerical columns: {list(numerical_columns)}")
+        
+        return X, dropped_columns
 
     def _prepare_data(
-        self, 
+        self,
         df: pd.DataFrame,
         target_column: str,
         test_size: float = 0.2,
         scale_features: bool = True
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Prepare data for training by splitting and scaling if required."""
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Optional[StandardScaler], List[str]]:
+        """Prepare data for training with improved preprocessing."""
+        # Separate features and target
         X = df.drop(columns=[target_column])
         y = df[target_column]
         
-        print(X.columns)
+        print("Original columns:", X.columns.tolist())
         
-        # Handle categorical variables
-        X = pd.get_dummies(X, drop_first=True)
+        # Preprocess features
+        X, dropped_columns = self._preprocess_categorical_features(
+            X,
+            exclude_columns=[target_column]
+        )
+        
+        print("Preprocessed columns:", X.columns.tolist())
         
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=42
         )
         
-        print(X_train.shape, X_test.shape)
         # Scale features if requested
+        scaler = None
         if scale_features:
             scaler = StandardScaler()
             X_train = scaler.fit_transform(X_train)
             X_test = scaler.transform(X_test)
             
-            # Save scaler for future use
-            return X_train, X_test, y_train, y_test, scaler
-            
-        return X_train, X_test, y_train, y_test, None
+        return X_train, X_test, y_train, y_test, scaler, list(X.columns)
 
     def _evaluate_regression(
-        self, 
-        y_true: np.ndarray, 
+        self,
+        y_true: np.ndarray,
         y_pred: np.ndarray
     ) -> Dict[str, float]:
         """Evaluate regression model performance."""
@@ -86,8 +171,8 @@ class MLTrainingService:
         }
 
     def _evaluate_classification(
-        self, 
-        y_true: np.ndarray, 
+        self,
+        y_true: np.ndarray,
         y_pred: np.ndarray
     ) -> Dict[str, float]:
         """Evaluate classification model performance."""
@@ -112,6 +197,8 @@ class MLTrainingService:
     ) -> Dict[str, Any]:
         """Train a machine learning model with the specified algorithm and parameters."""
         
+        
+        print("columns:", df.columns)
         # Validate algorithm
         if algorithm in self.regression_algorithms:
             model_class = self.regression_algorithms[algorithm]
@@ -122,12 +209,11 @@ class MLTrainingService:
         else:
             raise ValueError(f"Unsupported algorithm: {algorithm}")
 
-        # Prepare data
-        data_split = self._prepare_data(df, target_column, test_size, scale_features)
-        if scale_features:
-            X_train, X_test, y_train, y_test, scaler = data_split
-        else:
-            X_train, X_test, y_train, y_test, _ = data_split
+        # Prepare data with improved preprocessing
+        X_train, X_test, y_train, y_test, scaler, feature_names = self._prepare_data(
+            df, target_column, test_size, scale_features
+        )
+        print("Preprocessed columns:", feature_names)
 
         # Initialize and train model with hyperparameters if provided
         model = model_class(**(hyperparameters or {}))
@@ -143,15 +229,19 @@ class MLTrainingService:
             else self._evaluate_classification(y_test, y_pred)
         )
 
-        # Save model and scaler
+        # Save model and related data
         model_filename = f"{algorithm}_{dataset_id}_{target_column}.pkl"
         model_path = self.models_directory / model_filename
         
         model_data = {
             "model": model,
-            "feature_names": list(df.drop(columns=[target_column]).columns),
+            "feature_names": feature_names,
             "target_column": target_column,
-            "scaler": scaler if scale_features else None
+            "scaler": scaler,
+            "preprocessing_info": {
+                "pii_columns": list(self.pii_columns),
+                "location_columns": list(self.location_columns)
+            }
         }
         
         joblib.dump(model_data, model_path)
@@ -159,11 +249,9 @@ class MLTrainingService:
         return {
             "model_path": str(model_path),
             "metrics": metrics,
-            "feature_names": model_data["feature_names"],
+            "feature_names": feature_names,
             "is_regression": is_regression
         }
-
-
 
 
 class MLPredictionService:

@@ -6,6 +6,8 @@ from database.base import get_db
 from models.datasets import DatasetDB 
 from models.projects import ProjectDB
 from fastapi.responses import FileResponse
+from security.auth import get_current_user
+from models.users import User
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -86,6 +88,28 @@ def list_project_datasets(project_id: int, db: Session = Depends(get_db)):
         } for dataset in datasets
     ]
     
+
+#get dataseets by user
+@router.get("/mydatasets")
+def list_user_datasets(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Retrieve list of datasets for a specific user lastest first
+    """
+    user_projects = db.query(ProjectDB).filter(ProjectDB.owner_id == current_user.id).all()
+    project_ids = [project.id for project in user_projects]
+    
+    datasets = db.query(DatasetDB).filter(DatasetDB.project_id.in_(project_ids)).order_by(DatasetDB.created_at.desc()).all()
+    
+    return [
+        {
+            "id": dataset.id,
+            "name": dataset.name,
+            "uploadedAt": dataset.created_at,
+            "shape": dataset.dataset_metadata["shape"],
+            "size": os.path.getsize(dataset.file_path)
+        } for dataset in datasets
+    ]
+
 
 
 

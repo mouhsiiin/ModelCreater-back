@@ -45,6 +45,7 @@ def train_model(
             status_code=500, 
             detail=f"Error reading dataset: {str(e)}"
         )
+        
     
     # Validate target column
     if not target_column or target_column not in df.columns:
@@ -65,7 +66,6 @@ def train_model(
             scale_features=scale_features
         )
         
-        print(result)
         
         # Save to database
         ml_model = MLModelDB(
@@ -73,6 +73,7 @@ def train_model(
             algorithm_name=algorithm,
             model_path=result["model_path"],
             performance_metrics=result["metrics"],
+            target_column=target_column,
             feature_names=result["feature_names"]
         )
         db.add(ml_model)
