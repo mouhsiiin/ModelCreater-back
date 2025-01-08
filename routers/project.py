@@ -55,7 +55,7 @@ def get_project_columns(
     db: Session = Depends(get_db),
 ):
     """Get the columns of the latest preprocessed dataset"""
-    raw_dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).first()
+    raw_dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).order_by(DatasetDB.id.desc()).first()
     
     dataset = db.query(PreprocessedDatasetDB).filter(PreprocessedDatasetDB.dataset_id == raw_dataset.id).order_by(PreprocessedDatasetDB.id.desc()).first()
     if not dataset:

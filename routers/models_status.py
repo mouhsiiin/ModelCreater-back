@@ -19,7 +19,7 @@ def get_models_by_project_id(
     db = Depends(get_db)
 ):
     """Get the latest trained model for a project"""
-    dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).first()
+    dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).order_by(DatasetDB.id.desc()).first()
     
     print(dataset.id)
     
@@ -62,13 +62,15 @@ def get_models_by_user(
     """Get all models for the current user"""
     user_projects = db.query(ProjectDB).filter(ProjectDB.owner_id == current_user.id).all()
     project_ids = [project.id for project in user_projects]
-    
+    print(project_ids)
     
     datasets = db.query(DatasetDB).filter(DatasetDB.project_id.in_(project_ids)).all()
     datasets_ids = [dataset.id for dataset in datasets]
     
-    print(datasets_ids)
     
-    models = db.query(MLModelDB).filter(MLModelDB.dataset_id.in_(datasets_ids)).all()
+    Preprocessed_datasets = db.query(PreprocessedDatasetDB).filter(PreprocessedDatasetDB.dataset_id.in_(datasets_ids)).all()
+    preprocessed_datasets_ids = [dataset.id for dataset in Preprocessed_datasets]
+    
+    models = db.query(MLModelDB).filter(MLModelDB.dataset_id.in_(preprocessed_datasets_ids)).all()
     
     return models

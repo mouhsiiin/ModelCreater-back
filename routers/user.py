@@ -4,6 +4,11 @@ from models.users import UserCreate, UserDB, User
 from database.base import get_db
 from security.auth import get_current_user
 from passlib.context import CryptContext
+from models.projects import ProjectDB
+from models.datasets import DatasetDB
+from models.ml_models import MLModelDB
+from models.preprocessed_datasets import PreprocessedDatasetDB
+
 
 # Initialize router
 router = APIRouter(
@@ -93,3 +98,31 @@ def update_user_profile(
     db.refresh(current_user)
     
     return current_user
+
+
+# get user stats
+@router.get("/stats")
+def get_user_stats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Get user statistics
+    
+    - Requires a valid JWT token
+    - Returns user statistics
+    """
+    # Get user projects
+    user_projects = db.query(ProjectDB).filter(ProjectDB.owner_id == current_user.id).all()
+    
+    # Get user datasets
+    project_ids = [project.id for project in user_projects]
+    user_datasets = db.query(DatasetDB).filter(DatasetDB.project_id.in_(project_ids)).all()
+    
+    # Get user models
+    dataset_ids = [dataset.id for dataset in user_datasets]
+    preprocessed_datasets = db.query(PreprocessedDatasetDB).filter(PreprocessedDatasetDB.dataset_id.in_(dataset_ids)).all()
+    user_models = db.query(MLModelDB).filter(MLModelDB.dataset_id.in_([dataset.id for dataset in preprocessed_datasets])).all()
+    
+    return {
+        "projects": len(user_projects),
+        "datasets": len(user_datasets),
+        "models": len(user_models)
+    }

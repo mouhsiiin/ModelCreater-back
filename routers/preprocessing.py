@@ -1,50 +1,56 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session 
 from database.base import get_db
-from models.preprocessing import PreprocessingConfigurationCreate
 from models.preprocessed_datasets import PreprocessedDatasetDB
 from models.datasets import DatasetDB
-from models.projects import ProjectDB
-from services.data_preprocessing import PreprocessingService
+from services.data_preprocessing import PreprocessingService, PreprocessingError
 from typing import Dict, Any
 from datetime import datetime, timezone
 import pandas as pd
 import os
+import json
 
 UPLOAD_DIRECTORY = "uploads"
 router = APIRouter(prefix="/preprocessing", tags=["preprocessing"])
 
+@router.get("/options")
+async def get_preprocessing_options(db: Session = Depends(get_db)):
+    """Get available preprocessing options and their valid values"""
+    preprocessing_service = PreprocessingService(db)
+    return preprocessing_service.get_available_options()
+
 @router.post("/process/{project_id}")
 async def process_data(
-    config: PreprocessingConfigurationCreate,
+    options: dict,
+    preview_stats: dict,
     project_id: int,
     db: Session = Depends(get_db)
 ):
     """
     Endpoint to store preprocessing configuration and execute preprocessing from uploaded file.
     
-    args:
-        config (PreprocessingConfigurationCreate): Configuration for preprocessing
+    Args:
+        options: Configuration for preprocessing
+        preview_stats: Preview statistics for preprocessing
         project_id (int): Project ID to get dataset from
         db (Session): Database session
     """
-    
-    # Get dataset ID from project
-    dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).first()
-    dataset_id = dataset.id
-    
-    
-    if not dataset_id:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-    
-    print("store config")
-    
     try:
+        # Get the latest dataset ID from project 
+        dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).order_by(DatasetDB.id.desc()).first()
+        if not dataset:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+
         preprocessing_service = PreprocessingService(db)
-        config_id = preprocessing_service.store_configuration(config.model_dump())
         
-        print("config_id: ", config_id)
-        
+        # Validate options before proceeding
+        try:
+            preprocessing_service.validate_options(options)
+        except PreprocessingError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        # Store configuration
+        config_id = preprocessing_service.store_configuration(options, preview_stats)
         
         # Read dataset file
         file_path = dataset.file_path
@@ -53,54 +59,72 @@ async def process_data(
         
         data = pd.read_csv(file_path)
         
+        # Create preprocessed dataset record
         preprocessed_dataset = PreprocessedDatasetDB(
-            dataset_id=dataset_id,
+            dataset_id=dataset.id,
             config_id=config_id,
             status="pending",
             location="",
             metadata={
                 "started_at": datetime.now(timezone.utc).isoformat(),
-                "original_rows": len(data)
+                "original_rows": len(data),
+                "original_columns": list(data.columns)
             }
         )
         db.add(preprocessed_dataset)
         db.flush()
-        
-        print("config is stored")
 
         try:
-            print("Processing data...")
-            result_df = preprocessing_service.execute_preprocessing(data.to_dict('records'), config.model_dump()["options"])
+            # Execute preprocessing
+            result, summary = preprocessing_service.execute_preprocessing(
+                data.to_dict('records'), 
+                options
+            )
             
-            if len(result_df) == 0:
-                raise ValueError("No data left after preprocessing")
-            
-            # Ensure the base directory exists
-            base_dir = os.path.join(UPLOAD_DIRECTORY, f"project_{project_id}")
-            if not os.path.exists(base_dir):
-                os.makedirs(base_dir)
+            # Handle split datasets if returned
+            if isinstance(result, tuple):
+                train_df, test_df = result
+                if len(train_df) == 0 or len(test_df) == 0:
+                    raise ValueError("No data left after preprocessing splits")
+                    
+                base_dir = os.path.join(UPLOAD_DIRECTORY, f"project_{project_id}")
+                os.makedirs(base_dir, exist_ok=True)
+                
+                # Save train dataset
+                train_location = os.path.join(base_dir, f"version_{preprocessed_dataset.id}_train.csv")
+                train_df.to_csv(train_location, index=False)
+                
+                # Save test dataset
+                test_location = os.path.join(base_dir, f"version_{preprocessed_dataset.id}_test.csv")
+                test_df.to_csv(test_location, index=False)
+                
+                storage_location = {
+                    "train": train_location,
+                    "test": test_location
+                }
+                result_df = train_df  # Use train data for metadata
+                
+            else:
+                if len(result) == 0:
+                    raise ValueError("No data left after preprocessing")
+                    
+                base_dir = os.path.join(UPLOAD_DIRECTORY, f"project_{project_id}")
+                os.makedirs(base_dir, exist_ok=True)
+                
+                storage_location = os.path.join(base_dir, f"version_{preprocessed_dataset.id}.csv")
+                result.to_csv(storage_location, index=False)
+                result_df = result
 
-
-
-            # Construct the storage location
-            if preprocessed_dataset.id is None:
-                raise ValueError("preprocessed_dataset.id is None; cannot construct storage path.")
-
-            storage_location = os.path.join(base_dir, f"version_{preprocessed_dataset.id}.csv")
-
-            # Save the DataFrame
-            try:
-                result_df.to_csv(storage_location, index=False)
-                print(f"Data successfully saved to {storage_location}")
-            except Exception as e:
-                print(f"Failed to save data: {e}")
-
+            # Update preprocessed dataset record
             preprocessed_dataset.status = "completed"
-            preprocessed_dataset.location = storage_location
+            preprocessed_dataset.location = json.dumps(storage_location) if isinstance(storage_location, dict) else storage_location
+            
+            # Update metadata with summary and additional info
             preprocessed_dataset.metadata.update({
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "processed_rows": len(result_df),
-                "columns": list(result_df.columns)
+                "processed_columns": list(result_df.columns),
+                "preprocessing_summary": summary
             })
             
             db.commit()
@@ -117,10 +141,12 @@ async def process_data(
             preprocessed_dataset.status = "failed"
             preprocessed_dataset.metadata.update({
                 "error": str(process_error),
-                "failed_at": datetime.utcnow().isoformat()
+                "failed_at": datetime.now(timezone.utc).isoformat()
             })
             db.commit()
-            raise process_error
+            raise HTTPException(status_code=400, detail=f"Preprocessing failed: {str(process_error)}")
 
+    except HTTPException as http_error:
+        raise http_error
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to process data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

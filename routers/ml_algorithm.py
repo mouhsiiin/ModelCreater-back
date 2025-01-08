@@ -25,7 +25,7 @@ def train_model(
 ):
     """Train a machine learning model on a dataset"""
     # Fetch dataset
-    raw_dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).first()
+    raw_dataset = db.query(DatasetDB).filter(DatasetDB.project_id == project_id).order_by(DatasetDB.id.desc()).first()
     
     # Fetch the latest preprocessed dataset
     dataset = db.query(PreprocessedDatasetDB).filter(PreprocessedDatasetDB.dataset_id == raw_dataset.id).order_by(PreprocessedDatasetDB.id.desc()).first()
